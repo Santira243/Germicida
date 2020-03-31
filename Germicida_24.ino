@@ -21,13 +21,33 @@
 #define BUZZER 6
 #define BTINIT 10
 
-#define TIEMPOOFF 10000  //al detectar a alguien
-#define TIEMPO_PROC 300000 //tiempo total 30min -> 1800000
+#define TIEMPOOFF 15000  //al detectar a alguien
+#define TIEMPO_PROC 600000 //tiempo total 20min -> 1200000
 
 #define TIEMPO_FINAL 10000 //tiempo total 30min
 unsigned int TIEMPOOFF_init = 15000; //al iniciar
 
 // variables will change:
+volatile int detec_mov1 = 0;         // variable for reading the sensor
+volatile int detec_mov2 = 0;         // variable for reading the sensor
+boolean parar = false;
+boolean btninit = false;
+boolean proceso = false;
+boolean comienza = false;
+boolean finalizo = false;
+
+unsigned long tiempo;
+unsigned long tiempo_2;
+unsigned long tiempo_3;
+unsigned long tiempo_4; //Comienza el ciclo 
+
+unsigned long tiempo_final; //Comienza el ciclo 
+
+unsigned long tiempo_proceso; //Comienza el ciclo 
+unsigned long tiempo_perdido; //por culpa de movimientos
+
+int btncount = 0;
+
 void setup() {
   Serial.begin(115200);
   pinMode(LED, OUTPUT);
@@ -109,12 +129,12 @@ void loop() {
             Serial.write('3');
             digitalWrite(LED_RAD, LOW);
              
-                if((tiempo - tiempo_2) > TIEMPOOFF)
-                {
+            if((tiempo - tiempo_2) > TIEMPOOFF)
+              {
                   tiempo_perdido += TIEMPOOFF;
                   parar = false;
                   analogWrite(BUZZER, 0);
-                }
+               }
             }
          if((tiempo - tiempo_proceso) > (TIEMPO_PROC + tiempo_perdido))
          {
@@ -250,4 +270,27 @@ void pin_ISR()
   parar = true;
   tiempo_2 = millis();
   tiempo_3 = millis();
+}
+
+void serialEvent() {
+  char inChar;
+  if (Serial.available()) {
+    // get the new byte:
+    inChar = (char)Serial.read();
+    // add it to the inputString:
+    }
+  if(inChar == 'A')
+  {
+   parar = true;
+   tiempo_2 = millis();
+   tiempo_3 = millis();
+   }
+     if(inChar == 'P')
+  {
+     if ((!comienza) && (!proceso))
+      { 
+        iniciar();
+      }
+   }
+
 }
