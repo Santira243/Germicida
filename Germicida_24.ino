@@ -1,4 +1,4 @@
-/*
+ /*
  Mejoras a incorporar:
  - Que reporte el tiempo que lleva encendido.
  PIN 2-> Entrada 1 Sensor movimiento
@@ -84,6 +84,7 @@ void loop()
   {  
        delay(300); 
        btncount++;
+       parar = false;
   }
   
   if (btncount > 4)
@@ -102,6 +103,7 @@ void loop()
 
   if (finalizo)
   { 
+    Apagar_luz();
     if ((tiempo - tiempo_final) < TIEMPO_FINAL)
      {
       beep_3();
@@ -140,16 +142,15 @@ void loop()
                }
             }
          
-         if((tiempo - tiempo_proceso) > (TIEMPO_PROC + tiempo_perdido))
-         {
-          
-          analogWrite(BUZZER, 0);
-          digitalWrite(LED, LOW);    // turn the LED off by making the voltage LOW
-          Apagar_luz();
-          digitalWrite(LED_RAD, HIGH);
+         if((tiempo - tiempo_proceso) > (TIEMPO_PROC + tiempo_perdido) )//
+         {     
+          Apagar_luz();     
           comienza = false;
           proceso = false;
-    
+          analogWrite(BUZZER, 0);
+          parar = true;
+          digitalWrite(LED, LOW);    // turn the LED off by making the voltage LOW
+          digitalWrite(LED_RAD, HIGH);
           tiempo_perdido = 0;
           tiempo_final = millis();
           finalizo = true;
@@ -333,4 +334,4 @@ void  Apagar_luz()
     Serial.write('S');
     estado = false;
     lectura = false;
- }            
+ }                
