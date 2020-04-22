@@ -1,338 +1,294 @@
+//--- VERSIÓN: 22/04/2020 ----//
+#define PIR1 2//----PIN Sensor de movimiento 1
+#define PIR2 3//----PIN Sensor de movimiento 2
+#define LED_TESTIGO 5//----PIN Led de BOTÓN, indica lámparas prendidas y alarmas.
+#define LED_RADIACION 12//----PIN Led indica tensión al inicio de ciclo y lámparas prendidas
+#define BUZZER 6//----PIN Buzzer
+#define BOTON 10//----PIN Boton Inicio de ciclo
+//----Tiempos definidos en milisegundos----//
+#define TIEMPO_CICLO 6000000 //----Duración de CICLO (lámparas encendidas)
+#define TIEMPO_HISTERESIS 7000 //----Demora en estabilizar los PIR (para inhabilitar sensado)
+#define TIEMPO_ALARMA_FIN 2000 //----Duración alarma final
+#define TIEMPO_SALIR 30000 //----Duración de alarma previo a iniciar el CICLO
+#define TIEMPO_PAUSA 12000 //----Duración de alarma PAUSAS (movimiento/serial)
+//----Banderas----//
+bool ciclo=false;//----ciclo activado/desactivado
+bool comenzado=false;//----comienzo de nuevo ciclo
+bool lectura_boton=false; //----boton apretado/no apretado
+bool lectura_serial_A=false; //----letra 'A-Apagar' recibida/no recibida
+bool lectura_serial_E=false; //----letra 'E-Encender' recibida/no recibida
+bool lectura_serial_P=false; //----letra 'P-Pausar' recibida/no recibida
+bool fin_histeresis=false;//----fin de alarma histéresis
+bool fin_pausa=false;//----fin de alarma pausa
+bool luz_encendida=false;//----encendido/apagado de las lámparas
+bool pausa=false;//----dar inicio a la pausa
+bool inicio_histeresis=true;
+//----Tiempos en los que sucede algún evento: millis()----//
+unsigned long tiempo;//----actual
+unsigned long tiempo_inicio; //----evento inicio (serial/boton)
+unsigned long tiempo_pausa; //---pausa (movimiento/serial)
+unsigned long tiempo_encendido; //----encendido lámparas
+unsigned long tiempo_ciclo;//----inicio de ciclo
+unsigned long tiempo_alarma;//----fin de alarma
+unsigned long tiempo_final;//----inicio de ciclo
+//----Contadores para control de tiempos varios----//
+unsigned long contador_ciclo; //----tiempo con luces encendidas
+unsigned long pausa_acumulada; //----tiempo en pausa
+unsigned int contador_boton;//----registro de presión sostenida en botón
 
- /*
- Mejoras a incorporar:
- - Que reporte el tiempo que lleva encendido.
- PIN 2-> Entrada 1 Sensor movimiento
- PIN 3 -> Entrada 2 Sensor movimiento
- PIN 4 -> SALIDA RELEE
- Pin 5 -> SALIDA LED
- Pin 12 -> SALIDA LED_RADIACION
- Pin 6 -> SALIDA BUZZER
- PIN 10 -> Entrada Boton Inicio CICLO
- 
-*/
-#define MOV1 2
-#define MOV2 3
-//#define RELEE 4
-#define LED 5
-#define LED_RAD 12
-#define BUZZER 6
-#define BTINIT 10
-
-#define TIEMPOOFF 15000  //al detectar a alguien
-#define TIEMPO_PROC 600000 //tiempo total 20min -> 1200000
-#define TIEMPO_HISTERESIS 5000 // tiempo que inhabilita el sensado
-#define TIEMPO_FINAL 10000 //tiempo total 30min
-unsigned int TIEMPOOFF_init = 30000; //al iniciar
-
-volatile int detec_mov1 = 0; // variable for reading the sensor
-volatile int detec_mov2 = 0; // variable for reading the sensor
-boolean parar = false;
-boolean btninit = false;
-boolean proceso = false;
-boolean comienza = false;
-boolean finalizo = false;
-boolean lectura = false;
-
-unsigned long tiempo;
-unsigned long tiempo_2;
-unsigned long tiempo_3;
-unsigned long tiempo_4; //Comienza el ciclo 
-
-unsigned long tiempo_final; //Comienza el ciclo 
-unsigned long tiempo_proceso; //Comienza el ciclo 
-unsigned long tiempo_perdido; //por culpa de movimientos
-unsigned long tiempo_encendido; //por culpa de movimientos
-
-int lectura_1;
-int lectura_2;
-
-boolean estado=false; //estado de encendido
-boolean estado_interrupcion;//estado para habilitación de interrupciones
-
-int btncount = 0;
 
 void setup() 
-{
+ {
   Serial.begin(115200);
-  pinMode(LED, OUTPUT);
-  pinMode(LED_RAD, OUTPUT);
+  pinMode(LED_TESTIGO, OUTPUT);
+  pinMode(LED_RADIACION, OUTPUT);
   pinMode(BUZZER, OUTPUT);
-  pinMode(BTINIT, INPUT_PULLUP);
-  pinMode(MOV1, INPUT);
-  pinMode(MOV2, INPUT);
-  estado_interrupcion=false;
-  Habilitar_interrupciones(); 
-  btncount=0;
-  tiempo_perdido = 0;
-  digitalWrite(LED_RAD, HIGH); //Avisa que esta con tensión.
-}
-
-void loop() 
-{
-  tiempo = millis();
-  btninit = digitalRead(BTINIT);
-  
-   lectura_1 = digitalRead(MOV1);
-   lectura_2 = digitalRead(MOV2);
-  
-  if(lectura)
+  pinMode(BOTON, INPUT_PULLUP); 
+  pinMode(PIR1, INPUT);
+  pinMode(PIR2, INPUT);
+  contador_boton=0;
+  pausa_acumulada=0;
+  contador_ciclo=0;
+  digitalWrite(LED_RADIACION, HIGH); //Avisa que esta con tensión.
+ }
+ 
+void alarma(unsigned int t, unsigned long t_prender)
   {
-    sensar_movimiento();
+    if((tiempo - t_prender)<floor(t/3))
+    { 
+      beep(500);
+    }
+    if(((tiempo - t_prender)>floor(t/3)) &&  ((tiempo - t_prender) < floor(2*t/3) ))
+    {
+      beep(300);
+    }
+    if((tiempo - t_prender)>floor(2*t/3))
+    { 
+      beep(100);
+    }
   }
+  
+void beep(int periodo)
+  {
+    if (abs(tiempo - tiempo_alarma) < periodo)
+        {
+        analogWrite(BUZZER, 440);
+        digitalWrite(LED_TESTIGO, HIGH);
+        }
+    if(abs(tiempo - tiempo_alarma) > periodo)
+        {
+        analogWrite(BUZZER, 0);
+        digitalWrite(LED_TESTIGO, LOW);   
+        }
 
+    if(abs(tiempo - tiempo_alarma) > 2*periodo)
+        {
+        tiempo_alarma=millis();
+        }
+  }
+  
+void botonEvent(bool btninit)
+  {
   if(!btninit)
-  {  
-       delay(300); 
-       btncount++;
-       parar = false;
-  }
-  
-  if (btncount > 4)
-  {
-    tiempo_4 = millis();
-    btncount=0;
-    comienza = true;
-    tiempo = millis();
-    digitalWrite(LED_RAD, LOW); // Leyó el botón
-  }
-  
-  if ((comienza) && (!proceso))
-  { 
-    iniciar();
-  }
-
-  if (finalizo)
-  { 
-    Apagar_luz();
-    if ((tiempo - tiempo_final) < TIEMPO_FINAL)
-     {
-      beep_3();
-     }  
-    else
-     { 
-      finalizo = false; 
-      analogWrite(BUZZER, 0); 
-     }
-  }
-
-  tiempo = millis();
-  
-  if(proceso)
-  {
-        
-        if (!parar)
-            {           
-            analogWrite(BUZZER, 0);        
-            digitalWrite(LED, HIGH);   // turn the LED on (HIGH is the voltage level)
-            digitalWrite(LED_RAD, HIGH);   // turn the LED on (HIGH is the voltage level)
-            Encender_luz();  
-            }     
-        else
-            {
-            //Serial.println("Paro de esterilizar");
-            beep_1();
-            digitalWrite(LED, LOW);    // turn the LED off by making the voltage LOW
-            Apagar_luz();
-            digitalWrite(LED_RAD, LOW);
-            if((tiempo - tiempo_2) > TIEMPOOFF)
-              {
-                  tiempo_perdido += TIEMPOOFF;
-                  parar = false;
-                  analogWrite(BUZZER, 0);
-               }
-            }
-         
-         if((tiempo - tiempo_proceso) > (TIEMPO_PROC + tiempo_perdido) )//
-         {     
-          Apagar_luz();     
-          comienza = false;
-          proceso = false;
-          analogWrite(BUZZER, 0);
-          parar = true;
-          digitalWrite(LED, LOW);    // turn the LED off by making the voltage LOW
-          digitalWrite(LED_RAD, HIGH);
-          tiempo_perdido = 0;
-          tiempo_final = millis();
-          finalizo = true;
-         }
-  }
-}
-
-void iniciar() 
-{
- Inhabilitar_interrupciones();  
-  
- if((tiempo - tiempo_4) < floor(TIEMPOOFF_init/3))
- { 
-  beep();
-  digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
- }
- 
- if(((tiempo - tiempo_4) > floor(TIEMPOOFF_init/3)) &&  ((tiempo - tiempo_4) < floor(2*TIEMPOOFF_init/3) ))
- {
-    beep_1();
-    digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
- }
-
- if((tiempo - tiempo_4) > floor(2*TIEMPOOFF_init/3) )
- { 
-  beep_2();
-  digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
- }
- 
- if((tiempo - tiempo_4) > TIEMPOOFF_init)
-  {
-    tiempo_proceso = millis();
-    digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
-    proceso = true;
-    comienza = false;
-  }
-}
-
-
-void beep()
-{
-digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
-if (abs(tiempo - tiempo_3) < 500)
-    {
-    analogWrite(BUZZER, 200);
-    digitalWrite(LED, HIGH);   // turn the LED on (HIGH is the voltage level)
-    }
-if(abs(tiempo - tiempo_3) > 500)
-    {
-     analogWrite(BUZZER, 0);
-     digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
-    }
-
-if(abs(tiempo - tiempo_3) > 1000)
-    {
-    tiempo_3 = millis();
-    }
-}
-
-void beep_1()
-{
- digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
- if (abs(tiempo - tiempo_3) < 300)
-    {
-    analogWrite(BUZZER, 200);
-    digitalWrite(LED, HIGH);   // turn the LED on (HIGH is the voltage level)
-    }
-if(abs(tiempo - tiempo_3) > 300)
-    {
-     analogWrite(BUZZER, 0);
-     digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level)
-   }
-
-if(abs(tiempo - tiempo_3) > 600)
-    {
-    tiempo_3 = millis();
-    }
-}
-
-void beep_2()
-{
- digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
- if (abs(tiempo - tiempo_3) < 100)
-    {
-    analogWrite(BUZZER, 200); 
-    digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level)
-    }
-if(abs(tiempo - tiempo_3) > 100)
-    {
-     analogWrite(BUZZER, 0);
-     digitalWrite(LED, HIGH);   // turn the LED on (HIGH is the voltage level)
-    }
-
-if(abs(tiempo - tiempo_3) > 200)
-    {
-    tiempo_3 = millis();
-    }
-}
-
-void beep_3()
-{
- digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level
- if (abs(tiempo - tiempo_3) < 1000)
-    {
-    analogWrite(BUZZER, 200); 
-    digitalWrite(LED, HIGH);   // turn the LED on (HIGH is the voltage level)
-    }
-if(abs(tiempo - tiempo_3) > 1000)
-    {
-     analogWrite(BUZZER, 0);
-     digitalWrite(LED, LOW);   // turn the LED on (HIGH is the voltage level)
-    }
-
-if(abs(tiempo - tiempo_3) > 2000)
-    {
-    tiempo_3 = millis();
-    }
-}
-
-void sensar_movimiento() 
-{
-  if(( lectura_2 ) || (lectura_1))
-  {
-    parar = true;
-    tiempo_2 = millis();
-    tiempo_3 = millis();
-  }
-}
-
-void serialEvent() {
-  char inChar;
-  if (Serial.available()) {
-    // get the new byte:
-    inChar = (char)Serial.read();
-    // add it to the inputString:
-    }
-  if(inChar == 'A')
-  {
-   parar = true;
-   tiempo_2 = millis();
-   tiempo_3 = millis();
-   }
-     if(inChar == 'P')
-  {
-     if ((!comienza) && (!proceso))
-      { 
-        iniciar();
+      {  
+          delay(300);//----si estoy pulsando, cuento 300 ms
+          contador_boton++;//---contador de pulsado
       }
-      parar = false;
-   }
-
-}
-
-void Encender_luz()
+      if (contador_boton > 6)//---al superar 1800 ms de pulsación, levanta bandera de evento boton
+      {
+        contador_boton=0;
+        lectura_boton=true;
+        tiempo_inicio=millis();
+        digitalWrite(LED_RADIACION, LOW); // Leyó el botón
+        //Serial.println("BOTON");
+      }
+  }
+void serialEvent() 
   {
-    Serial.write('O'); 
-    if(estado == false)
-   {
-    estado = true;
-    tiempo_encendido = millis();
-   }
-  
-   if(((tiempo - tiempo_encendido) > TIEMPO_HISTERESIS))
+    char inChar;
+    if (Serial.available())//----Si está leyendo el serial, traemos el char y seteamos banderas----//
     {
-      Habilitar_interrupciones();
+      inChar=(char)Serial.read();//----ESP envía 'A' para APAGAR
+      if(inChar=='A')
+      {
+        lectura_serial_E=false;
+        lectura_serial_P=false;
+        lectura_serial_A=true;
+        //Serial.println("SERIAL A");
+      }
+      if(inChar=='E')//----ESP envía 'E' para ENCENDER
+      {
+        lectura_serial_E=true;
+        lectura_serial_P=false;
+        lectura_serial_A=false;
+        tiempo_inicio=millis();
+        digitalWrite(LED_RADIACION, LOW);
+        //Serial.println("SERIAL E");
+      }
+      if(inChar=='P')//----ESP envía 'P' para PAUSAR
+      {
+        lectura_serial_E=false;
+        lectura_serial_P=true;
+        lectura_serial_A=false;
+        tiempo_pausa=millis();
+        //Serial.println("SERIAL P");
+      }
     }
   }
-
-void Inhabilitar_interrupciones()
+void iniciar() 
   {
-    lectura = false;   
+    if((tiempo - tiempo_inicio)<TIEMPO_SALIR)//----si estoy dentro del tiempo de salida acciona la alarma
+      {
+        alarma(TIEMPO_SALIR,tiempo_inicio);
+      }
+    else//----si terminó el tiempo de salida inicia el ciclo
+    {
+      tiempo_ciclo=millis();
+      digitalWrite(LED_TESTIGO, HIGH);   
+      ciclo=true;
+      comenzado=false;
+    }
   }
+void pausar()
+  {
+    if(luz_encendida)
+      {
+        apagarLuz();
+      }
+    tiempo=millis();
+    if((tiempo - tiempo_pausa)<TIEMPO_PAUSA)
+      {
+        alarma(TIEMPO_PAUSA,tiempo_pausa);
+      }
+    else
+      {
+        pausa_acumulada+=TIEMPO_PAUSA;
+        //Serial.println(pausa_acumulada);
+        pausa=false;
+      }
+  }
+void finCiclo()
+  {
+    analogWrite(BUZZER, 440);
+    digitalWrite(LED_TESTIGO, HIGH);
+    delay(2000);
+    analogWrite(BUZZER, 0);
+    //---Reiniciamos las variables
+    digitalWrite(LED_RADIACION, HIGH);
+    digitalWrite(LED_TESTIGO, LOW);
+    ciclo=false;
+    comenzado=false;
+    lectura_boton=false;
+    luz_encendida=false;
+    pausa=false;
+    inicio_histeresis=true;
+    fin_histeresis=false;
+  }
+void encenderLuz()
+  {
+    if (inicio_histeresis)
+      {
+        digitalWrite(LED_RADIACION, HIGH);
+        digitalWrite(LED_TESTIGO, HIGH);
+        Serial.write('O');
+        //Serial.println(" ON");
+        inicio_histeresis=false;
+        tiempo_encendido=millis();
+      }
+    else
+      {      
+        if(TIEMPO_HISTERESIS<((tiempo - tiempo_encendido)))
+          {
+            fin_histeresis=true;
+            luz_encendida=true;
+            //Serial.println("acá tenes tu histeresis");
 
- void Habilitar_interrupciones()
- {
-  lectura = true;
- }
-
-void  Apagar_luz()
+          }
+      }
+  }
+void apagarLuz()
  {
     Serial.write('S');
-    estado = false;
-    lectura = false;
- }                
+    //Serial.println(" STOP");
+    luz_encendida=false;
+    lectura_serial_E=false;
+    digitalWrite(LED_TESTIGO,LOW);
+    digitalWrite(LED_RADIACION, LOW);
+    inicio_histeresis=true;
+
+ }      
+void loop() 
+  {
+    tiempo=millis();
+    botonEvent(digitalRead(BOTON));
+    serialEvent();
+    //---LECTURA DE EVENTOS DE INICIO DE CICLO
+    if (lectura_boton || lectura_serial_E)
+      {
+        tiempo=millis();
+        comenzado=true;
+      }  
+    //---ACTIVACIÓN DE ALARMA INICIAL Y HABILITACIÓN DE CICLO
+    if (comenzado && (!ciclo))
+      {
+        iniciar();
+        pausa_acumulada=0;
+        contador_ciclo=0;
+      }
+    //---CONTROL GENERAL DE ESTADOS EN EL CICLO
+    if(ciclo)
+      {
+        tiempo=millis();
+        contador_ciclo=tiempo-tiempo_ciclo-pausa_acumulada;
+        //---VERIFICACIÓN DEL TIEMPO MÁXIMO DE CICLO
+        if (contador_ciclo<TIEMPO_CICLO)
+          {
+            //---VERIFICACIÓN DE EVENTO SERIAL DE APAGADO
+            if (lectura_serial_A)
+              {
+                lectura_serial_A=false;
+                apagarLuz();
+                finCiclo();
+                //Serial.println("Fin por lectura A");
+              }
+            //---SÓLO SE ENCIENDE LUZ SI NO ESTÁ ENCENDIDA, NI EN UNA PAUSA, CON CICLO INICIADO
+            if ((!luz_encendida)&&(!pausa)&&(ciclo))
+              {
+                encenderLuz();
+              }
+            //---SÓLO SE SENSA SI NO HAY PAUSA INICIADA
+            if(!pausa)
+              {
+                //---SENSADO DE MOVIMIENTO ACTIVADO AL FINALIZAR HISTÉRESIS
+                if (fin_histeresis)
+                  {
+                    if((digitalRead(PIR1)) || (digitalRead(PIR2)))
+                      {
+                        pausa = true;
+                        tiempo_pausa = millis();
+                        //Serial.println("Pausa PIR");
+                      }
+                  } 
+                if (lectura_serial_P)
+                  {
+                    lectura_serial_P=false;
+                    pausa = true;
+                    tiempo_pausa = millis();
+                    //Serial.println("Pausa SERIAL");
+                  }
+              }
+            //---SÓLO SE ACTIVA LA PAUSA SI NO ESTÁ INICIADA
+            else
+              {
+                pausar();//---alarma sonora y fin de pausa
+              }
+          }
+        //---SE FINALIZA AL CUMPLIR TIEMPO_CICLO
+        else 
+          {
+            apagarLuz();//----alarma sonora y envia señal de apagado
+            finCiclo();
+            //Serial.println("Fin por TIEMPO_CICLO");
+          }
+      } 
+  }
